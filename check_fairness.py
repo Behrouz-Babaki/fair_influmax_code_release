@@ -214,6 +214,8 @@ for graphname in graphnames:
     #        for val_idx, val in enumerate(values):
     #            print(attribute, val, all_fair_vals[val_idx], greedy_vals[val_idx], opt_attr[val])
 
+            alg_seeds['Greedy'][graphname][attribute][run] = xg
+            
             def round_seeds(x):
                 best_violation = 100000
                 best_x = x
@@ -227,9 +229,17 @@ for graphname in graphnames:
                         best_violation = violation
                 return best_x
 
-            alg_seeds['Greedy'][graphname][attribute][run] = xg
-            alg_seeds['GR'][graphname][attribute][run] = round_seeds(fair_x)
-            alg_seeds['MaxMin-Size'][graphname][attribute][run] = round_seeds(minmax_x)
+            try:
+                fair_x_rounded = round_seeds(fair_x)
+            except:
+                fair_x_rounded = None
+            alg_seeds['GR'][graphname][attribute][run] = (fair_x, fair_x_rounded)
+
+            try:
+                minmax_x_rounded = round_seeds(minmax_x)
+            except:
+                minmax_x_rounded = None
+            alg_seeds['MaxMin-Size'][graphname][attribute][run] = (minmax_x, minmax_x_rounded)
 
             fair_violation = np.clip(all_opt - all_fair_vals, 0, np.inf)/all_opt
             greedy_violation = np.clip(all_opt - greedy_vals, 0, np.inf)/all_opt
