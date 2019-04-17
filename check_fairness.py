@@ -3,7 +3,7 @@ import numpy as np
 import pickle
 from utils import greedy
 from icm import sample_live_icm, make_multilinear_objective_samples_group, make_multilinear_gradient_group
-from algorithms import algo, maxmin_algo, make_normalized, indicator
+from algorithms import algo, maxmin_algo, make_normalized, indicator, rounding
 import math
 
 def multi_to_set(f, n = None):
@@ -22,7 +22,7 @@ def valoracle_to_single(f, i):
         return f(x, 1000)[i]
     return f_single
 
-budget = 15
+budget = 25
 print('Budget: {}'.format(budget))
 
 
@@ -37,7 +37,7 @@ succession = True
 #MD is better asymptotically for large networks but may require many iterations
 #and is typically slower than gurobi for small/medium sized problems. You can
 #tune the stepsize/batch size/number of iterations for MD by editing algorithms.py
-solver = 'md'
+solver = 'gurobi'
 
 #attribute to examine fairness wrt
 #attributes = ['birthsex', 'gender', 'sexori', 'race']
@@ -50,11 +50,13 @@ gr_values = {}
 group_size = {}
 #algorithm -> network -> attribute -> n_runs * n_values
 alg_values = {}
+alg_seeds = {}
 
 num_runs = 1
 algorithms = ['Greedy', 'GR', 'MaxMin-Size']
 for alg in algorithms:
     alg_values[alg] = {}
+    alg_seeds[alg] = {}
 
 num_graphs = 1
 graphnames = ['spa_500_{}'.format(graphidx) for graphidx in range(10)]
@@ -72,10 +74,10 @@ for graphname in graphnames:
                 to_remove.append(v)
         g.remove_nodes_from(to_remove)
     
-    #propagation probability for the ICM
-    p = 0.1
-    for u,v in g.edges():
-        g[u][v]['p'] = p
+    # #propagation probability for the ICM
+    # p = 0.1
+    # for u,v in g.edges():
+    #     g[u][v]['p'] = p
     
     g = nx.convert_node_labels_to_integers(g, label_attribute='pid')
         
@@ -83,6 +85,7 @@ for graphname in graphnames:
     group_size[graphname] = {}
     for alg in algorithms:
         alg_values[alg][graphname] = {}
+        alg_seeds[alg][graphname] = {}
     for attribute in attributes:
             #assign a unique numeric value for nodes who left the attribute blank
             nvalues = len(np.unique([g.node[v][attribute] for v in g.nodes()]))
@@ -95,6 +98,7 @@ for graphname in graphnames:
             group_size[graphname][attribute] = np.zeros((num_runs, nvalues))
             for alg in algorithms:
                 alg_values[alg][graphname][attribute] = np.zeros((num_runs, nvalues))
+                alg_seeds[alg][graphname][attribute] = [[] for _ in range(num_runs)]
 
     
     fair_vals_attr = np.zeros((num_runs, len(attributes)))
@@ -209,7 +213,24 @@ for graphname in graphnames:
             alg_values['MaxMin-Size'][graphname][attribute][run] = all_minmax_vals
     #        for val_idx, val in enumerate(values):
     #            print(attribute, val, all_fair_vals[val_idx], greedy_vals[val_idx], opt_attr[val])
-                
+
+            def round_seeds(x):
+                best_violation = 100000
+                best_x = x
+                for _ in range(50):
+                    x_round = rounding(x)
+                    vals = val_oracle(x, 1000)
+                    violation = np.clip(all_opt - vals, 0, np.inf)/all_opt
+                    violation = violation.mean()
+                    if violation < best_violation:
+                        best_x = x_round
+                        best_violation = violation
+                return best_x
+
+            alg_seeds['Greedy'][graphname][attribute][run] = xg
+            alg_seeds['GR'][graphname][attribute][run] = round_seeds(fair_x)
+            alg_seeds['MaxMin-Size'][graphname][attribute][run] = round_seeds(minmax_x)
+
             fair_violation = np.clip(all_opt - all_fair_vals, 0, np.inf)/all_opt
             greedy_violation = np.clip(all_opt - greedy_vals, 0, np.inf)/all_opt
             fair_vals_attr[run, attr_idx] = fair_violation.sum()/len(values)
@@ -220,4 +241,4 @@ for graphname in graphnames:
         
             pof[run, attr_idx] = greedy_vals.sum()/all_fair_vals.sum()
             print('fair: {}, greedy: {}'.format(fair_violation.sum()/len(values),  greedy_violation.sum()/len(values)))
-            pickle.dump((alg_values, gr_values, group_size), open('results_spa.pickle', 'wb'))
+            pickle.dump((alg_values, alg_seeds, gr_values, group_size), open('results_spa.pickle', 'wb'))
