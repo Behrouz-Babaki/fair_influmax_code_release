@@ -79,11 +79,11 @@ def lp_minmax(x, grad_oracle, k, group_indicator, group_targets):
     m.addConstr(gp.quicksum(v) <= k)
     g = grad_oracle(x, 5000)
     for i in range(len(group_targets)):
-        m.addConstr(obj <= gp.quicksum(v[j]*g[j, i] for j in range(len(v)))/group_targets[i])
+        if group_targets[i] > 0:
+            m.addConstr(obj <= gp.quicksum(v[j]*g[j, i] for j in range(len(v)))/group_targets[i])
     m.setObjective(obj, gp.GRB.MAXIMIZE)
     m.optimize()
     return np.array([v[i].x for i in range(len(v))])
-
 
 def rounding(x):
     '''
@@ -96,8 +96,8 @@ def rounding(x):
     x = x.copy()
     for t in range(len(x)-1):
         if x[i] == 0 and x[j] == 0:
-            i = i + 1
-        if x[i] + x[j] < 1:
+            i = max((i,j)) + 1
+        elif x[i] + x[j] < 1:
             if random.random() < x[i]/(x[i] + x[j]):
                 x[i] = x[i] + x[j]
                 x[j] = 0
@@ -209,7 +209,7 @@ def maxmin_algo(grad_oracle, val_oracle, threshold, k, group_indicator, num_iter
 #        print(target)
         group_targets = np.zeros(group_indicator.shape[1])
         group_targets[:] = target
-        x = algo(grad_oracle, val_oracle, threshold, k, group_indicator, group_targets, num_iter, solver)
+        x = algo(grad_oracle, val_oracle, threshold, k, group_indicator, group_targets, num_iter, solver)[1:]
         vals = val_oracle(x.mean(axis=0), 1000)
         if vals.min() > target:
             lb = target
